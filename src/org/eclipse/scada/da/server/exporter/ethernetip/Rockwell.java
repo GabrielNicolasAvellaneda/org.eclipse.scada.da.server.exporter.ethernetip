@@ -37,6 +37,7 @@ public class Rockwell extends HiveCommon implements Runnable {
 	private ScheduledExecutorService scheduler = null;
 	private Map<String, RockwellDataItem> memory;
 	private static int MAX_READ_TAGS = 16;
+	private static int MEMORY_BLOCK_SIZE = 64;
 		
 	public Rockwell() {
 		super();
@@ -61,9 +62,9 @@ public class Rockwell extends HiveCommon implements Runnable {
         final int port = 44818;
         comm = new SimpleLogixCommunicator(host, port);
         
-        for (int i = 0; i < 64; i++) {
+        for (int i = 0; i < MEMORY_BLOCK_SIZE; i++) {
 			final String tagName = String.format("tag1[%d]", i);
-			final RockwellDataItem item = new RockwellDataItem(tagName);
+			final RockwellDataItem item = new RockwellDataItem(tagName, comm);
 			registerItem(item);
 			memory.put(tagName, item);
 			this.rootFolder.add(tagName, item, null);
@@ -84,7 +85,7 @@ public class Rockwell extends HiveCommon implements Runnable {
 	@Override
 	public void run() {
 		try {
-			Object[] objects = ((Object[])comm.read("tag1", 64));
+			Object[] objects = ((Object[])comm.read("tag1", MEMORY_BLOCK_SIZE));
 			for (int i=0; i < objects.length; i++) {
 				Object value = objects[i];
 				String key = String.format("tag1[%d]", i);
