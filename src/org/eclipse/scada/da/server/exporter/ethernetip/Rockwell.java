@@ -1,6 +1,10 @@
 package org.eclipse.scada.da.server.exporter.ethernetip;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Hashtable;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -27,12 +31,12 @@ import se.opendataexchange.ethernetip4j.exceptions.ProcessingAttributesException
 import se.opendataexchange.ethernetip4j.exceptions.ResponseBufferOverflowException;
 
 public class Rockwell extends HiveCommon implements Runnable {
-	private static String hiveId = "org.eclipse.scada.da.server.exporter.ethernetip.Rockwell";
+	private static String HIVE_ID = "org.eclipse.scada.da.server.exporter.ethernetip.Rockwell";
 	private FolderCommon rootFolder;
 	private SimpleLogixCommunicator comm;
 	private ScheduledExecutorService scheduler = null;
-	private RockwellDataItem item = null;
-	private static String tagName = "tag1[1]";
+	private Map<String, RockwellDataItem> memory;
+	private static int MAX_READ_TAGS = 16;
 		
 	public Rockwell() {
 		super();
@@ -40,11 +44,13 @@ public class Rockwell extends HiveCommon implements Runnable {
 		this.rootFolder = new FolderCommon();
 		
 		this.setRootFolder(this.rootFolder);
+		
+		this.memory = new Hashtable<>();
 	}
 	
 	@Override
 	public String getHiveId() {
-		return hiveId;
+		return HIVE_ID;
 	}
 	
 	@Override
@@ -54,11 +60,15 @@ public class Rockwell extends HiveCommon implements Runnable {
 		final String host = "127.0.0.1";
         final int port = 44818;
         comm = new SimpleLogixCommunicator(host, port);
-		item = new RockwellDataItem(tagName);
-		registerItem(item);
-		this.rootFolder.add(tagName, item, null);
-		
-		this.scheduler = Executors.newSingleThreadScheduledExecutor(new NamedThreadFactory(this.hiveId));
+        
+        for (int i = 0; i < 64; i++) {
+			final String tagName = String.format("tag1[%d]", i);
+			final RockwellDataItem item = new RockwellDataItem(tagName);
+			registerItem(item);
+			memory.put(tagName, item);
+			this.rootFolder.add(tagName, item, null);
+		}
+		this.scheduler = Executors.newSingleThreadScheduledExecutor(new NamedThreadFactory(this.HIVE_ID));
 		this.scheduler.scheduleAtFixedRate(this, 0, 1000, TimeUnit.MILLISECONDS);
 	}
 	
@@ -73,30 +83,24 @@ public class Rockwell extends HiveCommon implements Runnable {
 
 	@Override
 	public void run() {
-		String[] tags = { tagName };
-        Object[] objects;
 		try {
-			objects = comm.read(tags);
-			if (objects.length > 0) {
-	        	System.out.println(objects[0]);
+			Object[] objects = ((Object[])comm.read("tag1", 64));
+			for (int i=0; i < objects.length; i++) {
+				Object value = objects[i];
+				String key = String.format("tag1[%d]", i);
+				RockwellDataItem item = memory.get(key);
 				item.updateData (
-		                Variant.valueOf ( objects[0] ),
+		                Variant.valueOf ( value ),
 		                new MapBuilder<String, Variant> ()
-		                        .put ( "description",
-		                                Variant.valueOf ( "some item" ) )
+		                        //.put ( "description", ariant.valueOf ( "some item" ) )
 		                        .put ( "timestamp",
 		                                Variant.valueOf ( System.currentTimeMillis () ) )
 		                        .getMap (), AttributeMode.UPDATE );
-		        }
-		} catch (PathSegmentException | ItemNotFoundException
-				| ProcessingAttributesException | InsufficientCommandException
-				| InsufficientNrOfAttributesException
-				| OtherWithExtendedCodeException
-				| ResponseBufferOverflowException | InvalidTypeException
-				| IOException | EmbeddedServiceException
-				| NotImplementedException e) {
+			}
+		} catch (Exception e) {
 			// TODO Auto-generated catch block
-			e.printStackTrace();
+			System.out.println(e.getMessage());
+			//e.printStackTrace();
 		}
 	}
 	
